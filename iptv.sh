@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-sh_ver="1.10.0"
+sh_ver="1.11.0"
 SH_LINK="https://raw.githubusercontent.com/woniuzfb/iptv/master/iptv.sh"
 SH_LINK_BACKUP="http://hbo.epub.fun/iptv.sh"
 SH_FILE="/usr/local/bin/tv"
@@ -178,17 +178,9 @@ SyncFile()
 
             if [ "$action" == "stop" ]
             then
-                if [ "$sh_ver" != "$d_version" ] 
+                if [[ -n $($JQ_FILE "${jq_index}[]|select(.$chnl_pid_key==$chnl_pid)" "${chnl_sync_files[sync_i]}") ]] 
                 then
-                    if [[ -n $($JQ_FILE "${jq_index}[]|select(.$chnl_pid_key==\"$chnl_pid\")" "${chnl_sync_files[sync_i]}") ]] 
-                    then
-                        JQ delete "${chnl_sync_files[sync_i]}" "$chnl_pid_key" "\"$chnl_pid\""
-                    fi
-                else
-                    if [[ -n $($JQ_FILE "${jq_index}[]|select(.$chnl_pid_key==$chnl_pid)" "${chnl_sync_files[sync_i]}") ]] 
-                    then
-                        JQ delete "${chnl_sync_files[sync_i]}" "$chnl_pid_key" "$chnl_pid"
-                    fi
+                    JQ delete "${chnl_sync_files[sync_i]}" "$chnl_pid_key" "$chnl_pid"
                 fi
             else
                 jq_channel_add="[{"
@@ -287,6 +279,7 @@ SyncFile()
                     JQ update "${chnl_sync_files[sync_i]}" "$jq_channel_edit|(${jq_index}[]|select(.$chnl_pid_key==$chnl_pid)|.$chnl_pid_key)=$value_last"
                 fi
             fi
+            jq_path=""
         done
 
         echo && echo -e "$info sync 执行成功..."
@@ -698,7 +691,11 @@ Update()
         then
             echo -e "$error 无法连接备用链接!"
             exit 1
+        else
+            echo -e "$info Hls Stream Creator 脚本更新完成"
         fi
+    else
+        echo -e "$info Hls Stream Creator 脚本更新完成"
     fi
 
     ln -sf "$IPTV_ROOT"/ffmpeg-git-*/ff* /usr/local/bin/
@@ -1256,14 +1253,6 @@ GetChannelInfo()
         fi
         chnl_encrypt_yn=${channel#*, encrypt: }
         chnl_encrypt_yn=${chnl_encrypt_yn%, encrypt_session:*}
-        chnl_encrypt_session_yn=${channel#*, encrypt_session: }
-        chnl_encrypt_session_yn=${chnl_encrypt_session_yn%, keyinfo_name:*}
-        chnl_keyinfo_name=${channel#*, keyinfo_name: }
-        chnl_keyinfo_name=${chnl_keyinfo_name%, key_name:*}
-        chnl_key_name=${channel#*, key_name: }
-        chnl_key_name=${chnl_key_name%, key_time:*}
-        chnl_key_time=${channel#*, key_time: }
-        chnl_key_time=${chnl_key_time%, input_flags:*}
         if [ "$chnl_encrypt_yn" == "no" ]
         then
             chnl_encrypt=""
@@ -1272,6 +1261,14 @@ GetChannelInfo()
             chnl_encrypt="-e"
             chnl_encrypt_text=$green"是"$plain
         fi
+        chnl_encrypt_session_yn=${channel#*, encrypt_session: }
+        chnl_encrypt_session_yn=${chnl_encrypt_session_yn%, keyinfo_name:*}
+        chnl_keyinfo_name=${channel#*, keyinfo_name: }
+        chnl_keyinfo_name=${chnl_keyinfo_name%, key_name:*}
+        chnl_key_name=${channel#*, key_name: }
+        chnl_key_name=${chnl_key_name%, key_time:*}
+        chnl_key_time=${channel#*, key_time: }
+        chnl_key_time=${chnl_key_time%, input_flags:*}
         chnl_input_flags=${channel#*, input_flags: }
         chnl_input_flags=${chnl_input_flags%, output_flags:*}
         chnl_output_flags=${channel#*, output_flags: }
@@ -1394,6 +1391,198 @@ GetChannelInfo()
     then
         echo && echo -e "$error 频道发生变化，请重试 !" && echo && exit 1
     fi
+}
+
+GetChannelInfoLite()
+{
+    if [ -z "${d_version:-}" ] 
+    then
+        GetDefault
+    fi
+
+    for((i=0;i<chnls_count;i++));
+    do
+        if [ -n "${monitor:-}" ] 
+        then
+            if { [ "${kind:-}" == "flv" ] && [ "${chnls_flv_push_link[i]}" != "$chnl_flv_push_link" ]; } || { [ -z "${kind:-}" ] && [ "${chnls_output_dir_name[i]}" != "$output_dir_name" ]; }
+            then
+                continue
+            fi
+        elif [ "${chnls_pid[i]}" != "$chnl_pid" ] 
+        then
+            continue
+        fi
+        chnl_pid=${chnls_pid[i]}
+        chnl_status=${chnls_status[i]}
+        chnl_stream_links=${chnls_stream_link[i]}
+        chnl_stream_link=${chnl_stream_links%% *}
+        chnl_live_yn=${chnls_live[i]}
+        if [ "$chnl_live_yn" == "no" ]
+        then
+            chnl_live=""
+            chnl_live_text="$red否$plain"
+        else
+            chnl_live="-l"
+            chnl_live_text="$green是$plain"
+        fi
+        chnl_proxy=${chnls_proxy[i]}
+        chnl_output_dir_name=${chnls_output_dir_name[i]}
+        chnl_output_dir_root="$LIVE_ROOT/$chnl_output_dir_name"
+        chnl_playlist_name=${chnls_playlist_name[i]}
+        chnl_seg_dir_name=${chnls_seg_dir_name[i]}
+        chnl_seg_name=${chnls_seg_name[i]}
+        chnl_seg_length=${chnls_seg_length[i]}
+        chnl_seg_count=${chnls_seg_count[i]}
+        chnl_video_codec=${chnls_video_codec[i]}
+        chnl_audio_codec=${chnls_audio_codec[i]}
+        chnl_video_audio_shift=${chnls_video_audio_shift[i]}
+        v_or_a=${chnl_video_audio_shift%_*}
+        if [ "$v_or_a" == "v" ] 
+        then
+            chnl_video_shift=${chnl_video_audio_shift#*_}
+            chnl_audio_shift=""
+            chnl_video_audio_shift_text="画面延迟 $chnl_video_shift 秒"
+        elif [ "$v_or_a" == "a" ] 
+        then
+            chnl_video_shift=""
+            chnl_audio_shift=${chnl_video_audio_shift#*_}
+            chnl_video_audio_shift_text="声音延迟 $chnl_audio_shift 秒"
+        else
+            chnl_video_audio_shift_text="不设置"
+            chnl_video_shift=""
+            chnl_audio_shift=""
+        fi
+        chnl_quality=${chnls_quality[i]}
+        chnl_bitrates=${chnls_bitrates[i]}
+        chnl_const_yn=${chnls_const[i]}
+        if [ "$chnl_const_yn" == "no" ]
+        then
+            chnl_const=""
+            chnl_const_text=" 固定频率:否"
+        else
+            chnl_const="-C"
+            chnl_const_text=" 固定频率:是"
+        fi
+        chnl_encrypt_yn=${chnls_encrypt[i]}
+        if [ "$chnl_encrypt_yn" == "no" ]
+        then
+            chnl_encrypt=""
+            chnl_encrypt_text=$red"否"$plain
+        else
+            chnl_encrypt="-e"
+            chnl_encrypt_text=$green"是"$plain
+        fi
+        chnl_encrypt_session_yn=${chnls_encrypt_session[i]}
+        chnl_keyinfo_name=${chnls_keyinfo_name[i]}
+        chnl_key_name=${chnls_key_name[i]}
+        chnl_key_time=${chnls_key_time[i]}
+        chnl_input_flags=${chnls_input_flags[i]}
+        chnl_output_flags=${chnls_output_flags[i]}
+        chnl_channel_name=${chnls_channel_name[i]}
+        chnl_channel_time=${chnls_channel_time[i]}
+        chnl_sync_yn=${chnls_sync[i]}
+        if [ "$chnl_sync_yn" == "no" ]
+        then
+            chnl_sync_text="$red禁用$plain"
+        else
+            chnl_sync_text="$green启用$plain"
+        fi
+        chnl_sync_file=${chnls_sync_file[i]}
+        chnl_sync_index=${chnls_sync_index[i]}
+        chnl_sync_pairs=${chnls_sync_pairs[i]}
+        chnl_flv_status=${chnls_flv_status[i]}
+        chnl_flv_push_link=${chnls_flv_push_link[i]}
+        chnl_flv_pull_link=${chnls_flv_pull_link[i]}
+
+        if [ -z "${monitor:-}" ] 
+        then
+            if [ "$chnl_status" == "on" ]
+            then
+                chnl_status_text=$green"开启"$plain
+            else
+                chnl_status_text=$red"关闭"$plain
+            fi
+
+            chnl_seg_dir_name_text=${chnl_seg_dir_name:-不使用}
+            chnl_seg_length_text=$chnl_seg_length" s"
+
+            chnl_crf_text=""
+            chnl_nocrf_text=""
+            chnl_playlist_file_text=""
+
+            if [ -n "$chnl_bitrates" ] 
+            then
+                while IFS= read -r chnl_br
+                do
+                    if [[ $chnl_br == *"-"* ]]
+                    then
+                        chnl_br_a=${chnl_br%-*}
+                        chnl_br_b=" 分辨率: ${chnl_br#*-}"
+                        chnl_crf_text="${chnl_crf_text}[ -maxrate ${chnl_br_a}k -bufsize ${chnl_br_a}k${chnl_br_b} ] "
+                        chnl_nocrf_text="${chnl_nocrf_text}[ 比特率 ${chnl_br_a}k${chnl_br_b}${chnl_const_text} ] "
+                        chnl_playlist_file_text="$chnl_playlist_file_text$green$chnl_output_dir_root/${chnl_playlist_name}_$chnl_br_a.m3u8$plain "
+                    elif [[ $chnl_br == *"x"* ]] 
+                    then
+                        chnl_crf_text="${chnl_crf_text}[ 分辨率: $chnl_br ] "
+                        chnl_nocrf_text="${chnl_nocrf_text}[ 分辨率: $chnl_br${chnl_const_text} ] "
+                        chnl_playlist_file_text="$chnl_playlist_file_text$green$chnl_output_dir_root/${chnl_playlist_name}.m3u8$plain "
+                    else
+                        chnl_crf_text="${chnl_crf_text}[ -maxrate ${chnl_br}k -bufsize ${chnl_br}k ] "
+                        chnl_nocrf_text="${chnl_nocrf_text}[ 比特率 ${chnl_br}k${chnl_const_text} ] "
+                        chnl_playlist_file_text="$chnl_playlist_file_text$green$chnl_output_dir_root/${chnl_playlist_name}_$chnl_br.m3u8$plain "
+                    fi
+                done <<< ${chnl_bitrates//,/$'\n'}
+            else
+                chnl_playlist_file_text="$chnl_playlist_file_text$green$chnl_output_dir_root/${chnl_playlist_name}.m3u8$plain "
+            fi
+
+            if [ "$chnl_sync_yn" == "yes" ]
+            then
+                sync_file=${chnl_sync_file:-$d_sync_file}
+                sync_index=${chnl_sync_index:-$d_sync_index}
+                sync_pairs=${chnl_sync_pairs:-$d_sync_pairs}
+                if [ -n "$sync_file" ] && [ -n "$sync_index" ] && [ -n "$sync_pairs" ] && [[ $sync_pairs == *"=http"* ]]
+                then
+                    chnl_playlist_link=${sync_pairs#*=http}
+                    chnl_playlist_link=${chnl_playlist_link%%,*}
+                    chnl_playlist_link="http$chnl_playlist_link/$chnl_output_dir_name/${chnl_playlist_name}_master.m3u8"
+                    chnl_playlist_link_text="$green$chnl_playlist_link$plain"
+                else
+                    chnl_playlist_link_text="$red请先设置 sync$plain"
+                fi
+            else
+                chnl_playlist_link_text="$red请先启用 sync$plain"
+            fi
+
+            if [ -n "$chnl_quality" ] 
+            then
+                chnl_video_quality_text="crf值$chnl_quality ${chnl_crf_text:-不设置}"
+            else
+                chnl_video_quality_text="比特率值 ${chnl_nocrf_text:-不设置}"
+            fi
+
+            if [ "$chnl_flv_status" == "on" ]
+            then
+                chnl_flv_status_text=$green"开启"$plain
+            else
+                chnl_flv_status_text=$red"关闭"$plain
+            fi
+
+            if [ -z "${kind:-}" ] && [ "$chnl_video_codec" == "copy" ] && [ "$chnl_audio_codec" == "copy" ]  
+            then
+                chnl_video_quality_text="原画"
+                chnl_playlist_link=${chnl_playlist_link:-}
+                chnl_playlist_link=${chnl_playlist_link//_master.m3u8/.m3u8}
+                chnl_playlist_link_text=${chnl_playlist_link_text//_master.m3u8/.m3u8}
+            elif [ -z "$chnl_bitrates" ] 
+            then
+                chnl_playlist_link=${chnl_playlist_link:-}
+                chnl_playlist_link=${chnl_playlist_link//_master.m3u8/.m3u8}
+                chnl_playlist_link_text=${chnl_playlist_link_text//_master.m3u8/.m3u8}
+            fi
+        fi
+        break
+    done
 }
 
 ViewChannelInfo()
@@ -2161,11 +2350,21 @@ WaitTerm()
     term_child_pid=$!
     if [ -n "${term_kill_needed:-}" ]
     then
-        kill -TERM "$term_child_pid" 2>/dev/null 
+        kill -TERM "$term_child_pid" 2>/dev/null
     fi
     wait $term_child_pid
     trap - TERM
     wait $term_child_pid
+    while true 
+    do
+        sleep 1
+        if kill -0 "$term_child_pid" 2> /dev/null 
+        then
+            kill -TERM "$term_child_pid" 2>/dev/null
+        else
+            break
+        fi
+    done
 }
 
 FlvStreamCreatorWithShift()
@@ -2694,6 +2893,7 @@ HlsStreamCreatorPlus()
                 SyncFile
                 sleep $seg_length
                 rm -rf "$LIVE_ROOT/${output_dir_name:-notfound}"
+                rm -rf "/tmp/$chnl_pid.lockdir"
             ' EXIT
 
             resolution=""
@@ -2841,6 +3041,7 @@ HlsStreamCreatorPlus()
                 SyncFile
                 sleep $chnl_seg_length
                 rm -rf "$LIVE_ROOT/${chnl_output_dir_name:-notfound}"
+                rm -rf "/tmp/$chnl_pid.lockdir"
             ' EXIT
 
             resolution=""
@@ -3035,6 +3236,7 @@ HlsStreamCreatorPlus()
                 SyncFile
                 sleep $seg_length
                 rm -rf "$LIVE_ROOT/${output_dir_name:-notfound}"
+                rm -rf "/tmp/$chnl_pid.lockdir"
             ' EXIT
 
             resolution=""
@@ -3249,6 +3451,7 @@ HlsStreamCreator()
                 SyncFile
                 sleep $seg_length
                 rm -rf "$LIVE_ROOT/${output_dir_name:-notfound}"
+                rm -rf "/tmp/$chnl_pid.lockdir"
             ' EXIT
 
             if [ -n "$quality" ] 
@@ -3293,6 +3496,7 @@ HlsStreamCreator()
                 SyncFile
                 sleep $chnl_seg_length
                 rm -rf "$LIVE_ROOT/${chnl_output_dir_name:-notfound}"
+                rm -rf "/tmp/$chnl_pid.lockdir"
             ' EXIT
 
             if [ -n "$chnl_quality" ] 
@@ -3384,6 +3588,7 @@ HlsStreamCreator()
                 SyncFile
                 sleep $seg_length
                 rm -rf "$LIVE_ROOT/${output_dir_name:-notfound}"
+                rm -rf "/tmp/$chnl_pid.lockdir"
             ' EXIT
 
             if [ -n "$quality" ] 
@@ -4302,10 +4507,15 @@ StopChannel()
         if kill -0 "$chnl_pid" 2> /dev/null 
         then
             echo && echo -e "$info 关闭频道, 请稍等..."
+            mkdir -p "/tmp/$chnl_pid.lockdir"
             if kill "$chnl_pid" 2> /dev/null 
             then
-                until [ ! -d "$LIVE_ROOT/$chnl_output_dir_name" ] 
+                until [ ! -d "$LIVE_ROOT/${chnl_output_dir_name:-notfound}" ]
                 do
+                    if [ ! -d "/tmp/$chnl_pid.lockdir" ]
+                    then
+                        rm -rf "$LIVE_ROOT/${chnl_output_dir_name:-notfound}"
+                    fi
                     sleep 1
                 done
             else
@@ -4322,6 +4532,27 @@ StopChannel()
         chnl_status="off"
     fi
     echo && echo -e "$info 频道[ $chnl_channel_name ]已关闭 !" && echo
+}
+
+StopChannelsForce()
+{
+    killall ffmpeg > /dev/null 2>&1 || true
+    pkill -f 'tv m' || true
+    GetChannelsInfo
+    for((i=0;i<chnls_count;i++));
+    do
+        chnl_pid=${chnls_pid[i]}
+        GetChannelInfoLite
+        JQ update "$CHANNELS_FILE" '(.channels[]|select(.pid=='"$chnl_pid"')|.status)="off"
+        |(.channels[]|select(.pid=='"$chnl_pid"')|.flv_status)="off"'
+        action="stop"
+        SyncFile
+        if [ "${chnl_live_yn}" == "yes" ] 
+        then
+            rm -rf "$LIVE_ROOT/${chnl_output_dir_name:-notfound}"
+        fi
+    done
+    echo && echo -e "$info 全部频道已关闭 !" && echo
 }
 
 RestartChannel()
@@ -9536,25 +9767,11 @@ UpdateSelf()
         major_ver=${d_version%%.*}
         minor_ver=${d_version#*.}
         minor_ver=${minor_ver%%.*}
-        if [ "$major_ver" == 1 ] && [ "$minor_ver" -lt 9 ]
+
+        if [ "$major_ver" == 1 ] && [ "$minor_ver" -lt 11 ]
         then
-            if [[ -n $($JQ_FILE '.channels[]|select(.status=="on")' "$CHANNELS_FILE") ]] || [[ -n $($JQ_FILE '.channels[]|select(.flv_status=="on")' "$CHANNELS_FILE") ]]
-            then
-                echo && echo -e "$info 需要先关闭所有频道，请稍等..." && echo
-                while IFS= read -r chnl_pid
-                do
-                    GetChannelInfo
-                    if [ "$chnl_flv_status" == "on" ] 
-                    then
-                        kind="flv"
-                        StopChannel
-                    elif [ "$chnl_status" == "on" ]
-                    then
-                        kind=""
-                        StopChannel
-                    fi
-                done < <($JQ_FILE '.channels[].pid' $CHANNELS_FILE)
-            fi
+            echo && echo -e "$info 需要先关闭所有频道，请稍等..." && echo
+            StopChannelsForce
         fi
         echo && echo -e "$info 更新中，请稍等..." && echo
         printf -v update_date '%(%m-%d)T'
@@ -11625,6 +11842,15 @@ V2rayListForwardAccount()
         fi
     else
         match_index=$((list_forward_account_num+inbounds_nginx_count-1))
+        if [ "${inbounds_listen[match_index]}" == "0.0.0.0" ] 
+        then
+            server_ip=$(dig +short myip.opendns.com @resolver1.opendns.com || true)
+            [ -z "$server_ip" ] && server_ip=$(curl --silent ipv4.icanhazip.com)
+            [ -z "$server_ip" ] && server_ip=$(curl --silent api.ip.sb/ip)
+            [ -z "$server_ip" ] && server_ip=$(curl --silent ipinfo.io/ip)
+        else
+            server_ip=${inbounds_listen[match_index]}
+        fi
         if [ "${inbounds_protocol[match_index]}" == "vmess" ] 
         then
             accounts_count=0
@@ -11645,7 +11871,7 @@ V2rayListForwardAccount()
             then
                 echo && echo -e "$error 此账户组没有账号" && echo && exit 1
             else
-                echo && echo -e "$accounts_list" && echo
+                echo && echo -e "服务器 IP: $server_ip\n\n$accounts_list" && echo
             fi
         else
             accounts_list=""
@@ -11663,7 +11889,7 @@ V2rayListForwardAccount()
                 map_user=${map_user%, pass: *}
                 map_pass=${line#*, pass: }
                 map_pass=${map_pass%\"}
-                accounts_list=$accounts_list"# $green$accounts_count$plain ${blank}用户名: $green$map_user$plain 密码: $green$map_pass$plain 链接: $green${inbounds_protocol[match_index]}://$map_user:$map_pass@${inbounds_listen[match_index]}:${inbounds_port[match_index]}$plain\n\n"
+                accounts_list=$accounts_list"# $green$accounts_count$plain ${blank}用户名: $green$map_user$plain 密码: $green$map_pass$plain 链接: $green${inbounds_protocol[match_index]}://$map_user:$map_pass@$server_ip:${inbounds_port[match_index]}$plain\n\n"
             done < <($JQ_FILE '.inbounds['"$match_index"'].settings.accounts | to_entries | map("user: \(.value.user), pass: \(.value.pass)") | .[]' "$V2_CONFIG")
 
             if [ -z "$accounts_list" ] 
